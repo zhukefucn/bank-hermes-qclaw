@@ -1,0 +1,774 @@
+openapi: 3.0.0
+info:
+  title: Bank Hermes QClaw - Enterprise API
+  description: |
+    企业级 Agent 中台 API 文档
+    基于 Hermes Agent 改造，专为银行场景设计
+  version: 1.0.0
+  contact:
+    name: Bank Hermes QClaw Support
+    url: https://github.com/zhukefucn/bank-hermes-qclaw
+    email: support@bank-hermes.com
+
+servers:
+  - url: http://localhost:8000
+    description: 本地开发环境
+  - url: https://api.your-bank.com
+    description: 生产环境
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "JWT Token 认证（格式：Bearer <token>）"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+          example: "Unauthorized"
+
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        name:
+          type: string
+          example: "北京分行"
+        code:
+          type: string
+          example: "BJ_BRANCH"
+        is_active:
+          type: boolean
+          example: true
+        quota_tokens:
+          type: integer
+          example: 1000000
+        quota_api_calls:
+          type: integer
+          example: 10000
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-05-25T12:00:00Z"
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+          example: "manager_zhang"
+        email:
+          type: string
+          example: "zhang@bank.com"
+        display_name:
+          type: string
+          example: "张三"
+        role:
+          type: string
+          enum: [admin, manager, operator, viewer, auditor]
+          example: "operator"
+        is_active:
+          type: boolean
+          example: true
+        last_login_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-05-25T10:00:00Z"
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          example: "user_login"
+        resource_type:
+          type: string
+          example: "user"
+        resource_id:
+          type: string
+          nullable: true
+        user_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [success, failure]
+          example: "success"
+        ip_address:
+          type: string
+          example: "10.0.0.1"
+        created_at:
+          type: string
+          format: date-time
+        requires_review:
+          type: boolean
+          example: false
+
+    QuotaStatus:
+      type: object
+      properties:
+        quota_type:
+          type: string
+          example: "token"
+        limit_daily:
+          type: integer
+          nullable: true
+          example: 100000
+        limit_monthly:
+          type: integer
+          nullable: true
+          example: 1000000
+        used_daily:
+          type: integer
+          example: 15000
+        used_monthly:
+          type: integer
+          example: 250000
+        remaining_daily:
+          type: integer
+          nullable: true
+          example: 85000
+        remaining_monthly:
+          type: integer
+          nullable: true
+          example: 750000
+        usage_percent_daily:
+          type: number
+          format: float
+          example: 15.0
+        usage_percent_monthly:
+          type: number
+          format: float
+          example: 25.0
+
+    MaskingRule:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "身份证号脱敏"
+        pattern:
+          type: string
+          example: "\\d{17}[0-9X]"
+        replacement:
+          type: string
+          example: "[身份证号]"
+        priority:
+          type: integer
+          example: 100
+        apply_to_input:
+          type: boolean
+          example: true
+        apply_to_output:
+          type: boolean
+          example: true
+        apply_to_log:
+          type: boolean
+          example: true
+        is_active:
+          type: boolean
+          example: true
+
+    ComplianceReport:
+      type: object
+      properties:
+        summary:
+          type: object
+          properties:
+            total_operations:
+              type: integer
+              example: 15234
+            failed_operations:
+              type: integer
+              example: 23
+            sensitive_operations:
+              type: integer
+              example: 156
+            failure_rate:
+              type: string
+              example: "0.15%"
+        by_action:
+          type: object
+          additionalProperties:
+            type: integer
+          example: {"login": 1234, "chat": 12340, "data_export": 156}
+        by_user:
+          type: object
+          additionalProperties:
+            type: integer
+        by_ip:
+          type: object
+          additionalProperties:
+            type: integer
+
+paths:
+  /enterprise/tenants:
+    get:
+      summary: 列出租户
+      description: 获取所有租户列表（需要 admin 权限）
+      tags: [Tenant Management]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tenant'
+              example:
+                - id: "550e8400-e29b-41d4-a716-446655440000"
+                  name: "北京分行"
+                  code: "BJ_BRANCH"
+                  is_active: true
+                  quota_tokens: 1000000
+                  quota_api_calls: 10000
+                  created_at: "2026-05-25T12:00:00Z"
+        '403':
+          description: 权限不足
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                detail: "Permission denied: manage_tenant required"
+
+    post:
+      summary: 创建租户
+      description: 创建新租户（需要 admin 权限）
+      tags: [Tenant Management]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, code]
+              properties:
+                name:
+                  type: string
+                  example: "北京分行"
+                code:
+                  type: string
+                  example: "BJ_BRANCH"
+            example:
+              name: "北京分行"
+              code: "BJ_BRANCH"
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                  code:
+                    type: string
+                  message:
+                    type: string
+              example:
+                id: "550e8400-e29b-41d4-a716-446655440000"
+                name: "北京分行"
+                code: "BJ_BRANCH"
+                message: "Tenant created successfully"
+        '400':
+          description: 租户代码已存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                detail: "Tenant code already exists"
+
+  /enterprise/users:
+    get:
+      summary: 列出用户
+      description: 获取当前租户的所有用户
+      tags: [User Management]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+              example:
+                - id: "660e8400-e29b-41d4-a716-446655440001"
+                  username: "manager_zhang"
+                  email: "zhang@bank.com"
+                  display_name: "张三"
+                  role: "operator"
+                  is_active: true
+                  last_login_at: "2026-05-25T10:00:00Z"
+
+  /enterprise/users/{user_id}/role:
+    put:
+      summary: 更新用户角色
+      description: 更新指定用户的角色（需要 manage_users 权限）
+      tags: [User Management]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "660e8400-e29b-41d4-a716-446655440001"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_role]
+              properties:
+                new_role:
+                  type: string
+                  enum: [admin, manager, operator, viewer, auditor]
+                  example: "manager"
+            example:
+              new_role: "manager"
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: "User role updated to manager"
+        '400':
+          description: 角色无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                detail: "Invalid role. Must be one of ['admin', 'manager', 'operator', 'viewer', 'auditor']"
+        '404':
+          description: 用户不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                detail: "User not found"
+
+  /enterprise/audit/logs:
+    get:
+      summary: 查询审计日志
+      description: 查询审计日志（支持过滤条件，需要 view_audit 权限）
+      tags: [Audit & Compliance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+            example: "user_login"
+          description: "操作类型过滤"
+        - name: resource_type
+          in: query
+          required: false
+          schema:
+            type: string
+            example: "user"
+          description: "资源类型过滤"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [success, failure]
+            example: "success"
+          description: "操作状态过滤"
+        - name: start_time
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: "开始时间"
+        - name: end_time
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: "结束时间"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+          description: "返回记录数限制"
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: "分页偏移量"
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditLog'
+              example:
+                - id: "770e8400-e29b-41d4-a716-446655440002"
+                  action: "user_login"
+                  resource_type: "user"
+                  resource_id: "660e8400-e29b-41d4-a716-446655440001"
+                  user_id: "660e8400-e29b-41d4-a716-446655440001"
+                  status: "success"
+                  ip_address: "10.0.0.1"
+                  created_at: "2026-05-25T10:00:00Z"
+                  requires_review: false
+
+  /enterprise/audit/compliance-report:
+    get:
+      summary: 生成合规报告
+      description: 生成指定时间范围内的合规报告（需要 view_audit 权限）
+      tags: [Audit & Compliance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: start_time
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          example: "2026-05-01T00:00:00Z"
+        - name: end_time
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          example: "2026-05-31T23:59:59Z"
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComplianceReport'
+              example:
+                summary:
+                  total_operations: 15234
+                  failed_operations: 23
+                  sensitive_operations: 156
+                  failure_rate: "0.15%"
+                by_action:
+                  login: 1234
+                  chat: 12340
+                  data_export: 156
+                by_user:
+                  "660e8400-e29b-41d4-a716-446655440001": 5000
+                  "660e8400-e29b-41d4-a716-446655440002": 3000
+                by_ip:
+                  "10.0.0.1": 8000
+                  "10.0.0.2": 7234
+
+  /enterprise/quota/status:
+    get:
+      summary: 获取配额状态
+      description: 获取当前租户的配额使用情况
+      tags: [Quota Management]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: quota_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [token, api_call]
+            default: "token"
+          description: "配额类型"
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotaStatus'
+              example:
+                quota_type: "token"
+                limit_daily: 100000
+                limit_monthly: 1000000
+                used_daily: 15000
+                used_monthly: 250000
+                remaining_daily: 85000
+                remaining_monthly: 750000
+                usage_percent_daily: 15.0
+                usage_percent_monthly: 25.0
+
+  /enterprise/quota/update:
+    put:
+      summary: 更新配额
+      description: 更新租户配额（需要 manage_quota 权限）
+      tags: [Quota Management]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quota_type:
+                  type: string
+                  enum: [token, api_call]
+                  example: "token"
+                limit_daily:
+                  type: integer
+                  nullable: true
+                  example: 150000
+                limit_monthly:
+                  type: integer
+                  nullable: true
+                  example: 1500000
+                limit_concurrent:
+                  type: integer
+                  nullable: true
+                  example: 15
+            example:
+              quota_type: "token"
+              limit_daily: 150000
+              limit_monthly: 1500000
+              limit_concurrent: 15
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: "Quota updated successfully"
+        '404':
+          description: 配额不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                detail: "Quota not found"
+
+  /enterprise/masking/rules:
+    get:
+      summary: 列出脱敏规则
+      description: 获取当前租户的所有脱敏规则
+      tags: [Data Masking]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MaskingRule'
+              example:
+                - id: "880e8400-e29b-41d4-a716-446655440003"
+                  name: "身份证号脱敏"
+                  pattern: "\\d{17}[0-9X]"
+                  replacement: "[身份证号]"
+                  priority: 100
+                  apply_to_input: true
+                  apply_to_output: true
+                  apply_to_log: true
+                  is_active: true
+
+    post:
+      summary: 创建脱敏规则
+      description: 创建新的数据脱敏规则（需要 manage_tenant 权限）
+      tags: [Data Masking]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, pattern, replacement]
+              properties:
+                name:
+                  type: string
+                  example: "手机号脱敏"
+                pattern:
+                  type: string
+                  example: "1[3-9]\\d{9}"
+                replacement:
+                  type: string
+                  example: "[手机号]"
+                priority:
+                  type: integer
+                  default: 100
+                apply_to_input:
+                  type: boolean
+                  default: true
+                apply_to_output:
+                  type: boolean
+                  default: true
+                apply_to_log:
+                  type: boolean
+                  default: true
+            example:
+              name: "手机号脱敏"
+              pattern: "1[3-9]\\d{9}"
+              replacement: "[手机号]"
+              priority: 90
+              apply_to_input: true
+              apply_to_output: true
+              apply_to_log: true
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  message:
+                    type: string
+              example:
+                id: "880e8400-e29b-41d4-a716-446655440004"
+                message: "Masking rule created successfully"
+
+  /enterprise/sso/config:
+    get:
+      summary: 获取 SSO 配置
+      description: 获取当前 SSO 配置（敏感信息掩码）
+      tags: [SSO Configuration]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sso_enabled:
+                    type: boolean
+                    example: true
+                  sso_provider:
+                    type: string
+                    example: "saml"
+                  sso_config:
+                    type: object
+                    description: "SSO 配置（敏感信息已掩码）"
+              example:
+                sso_enabled: true
+                sso_provider: "saml"
+                sso_config:
+                  entity_id: "https://idp.bank.com/entity"
+                  sso_url: "https://idp.bank.com/sso"
+                  client_secret: "***masked***"
+
+  /enterprise/sso/test:
+    post:
+      summary: 测试 SSO 连接
+      description: 测试 SSO 提供者连接（需要 manage_tenant 权限）
+      tags: [SSO Configuration]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider_name]
+              properties:
+                provider_name:
+                  type: string
+                  example: "saml"
+            example:
+              provider_name: "saml"
+      responses:
+        '200':
+          description: 测试成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider:
+                    type: string
+                  status:
+                    type: string
+              example:
+                provider: "saml"
+                status: "test_not_implemented"
+        '404':
+          description: SSO 提供者不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                detail: "SSO provider not found: saml"
