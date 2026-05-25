@@ -108,7 +108,7 @@ class SessionPoolManager:
                 Session.status == "active",
             )
 
-        query = query.order_by(Session.last_message_at.desc())
+        query = query.order_by(Session.last_message.desc())
         result = await db.execute(query)
         return result.scalars().all()
 
@@ -217,7 +217,7 @@ class SessionPoolManager:
         # 更新会话统计
         session.message_count += 1
         session.token_used += tokens_used
-        session.last_message_at = datetime.utcnow()
+        session.last_message = datetime.utcnow()
 
         await db.flush()
 
@@ -291,7 +291,7 @@ class SessionPoolManager:
         if end_time:
             query = query.where(Session.created_at <= end_time)
 
-        query = query.order_by(Session.last_message_at.desc())
+        query = query.order_by(Session.last_message.desc())
         query = query.limit(limit).offset(offset)
 
         result = await db.execute(query)
@@ -363,7 +363,7 @@ class SessionPoolManager:
             "user_id": session.user_id,
             "status": session.status,
             "message_count": session.message_count,
-            "last_message_at": session.last_message_at,
+            "last_message": session.last_message,
         }
 
         # 更新用户会话索引
